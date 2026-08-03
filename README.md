@@ -139,7 +139,6 @@ python vuln_report.py -i /home/administrator/repXML/ --json --no-sort
 vuln_report/
 ├── vuln_report.py   # основной скрипт
 ├── README.md        # документация
-└── venv/            # виртуальное окружение (не коммитить в git)
 ```
 
 ---
