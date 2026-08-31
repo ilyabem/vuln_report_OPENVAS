@@ -13,6 +13,7 @@
 - Выводит результат в любом сочетании форматов: **JSON**, **DOCX**, **PDF**
 - При запросе только PDF — промежуточный `.docx` создаётся и удаляется автоматически
 - Корректно пропускает битые XML-файлы, не прерывая обработку остальных
+- Позволяет добавить **водяной знак** (логотип организации) на каждую страницу DOCX/PDF с настраиваемой шириной и прозрачностью
 
 ---
 
@@ -29,12 +30,10 @@
 ```bash
 # Рекомендуется использовать виртуальное окружение
 python3 -m venv venv
-source venv/bin/activate          # Linux / macOS
-# venv\Scripts\activate           # Windows
+source venv/bin/activate         
 
 pip install python-docx
 
-# LibreOffice (только если нужен PDF, Linux):
 sudo apt install libreoffice
 ```
 
@@ -44,6 +43,7 @@ sudo apt install libreoffice
 
 ```
 python vuln_report.py -i <путь> [--json] [--docx] [--pdf] [-o <имя>] [--no-sort]
+                       [--watermark <файл>] [--watermark-opacity 0-100] [--watermark-width <дюймы>]
 ```
 
 ### Аргументы
@@ -56,6 +56,9 @@ python vuln_report.py -i <путь> [--json] [--docx] [--pdf] [-o <имя>] [--n
 | `--pdf` | Сохранить PDF (требует LibreOffice) |
 | `-o`, `--output` | Базовое имя выходных файлов без расширения (по умолчанию: `vulnerability_report`) |
 | `--no-sort` | Отключить сортировку по CVSS |
+| `--watermark IMAGE` | Путь к файлу изображения (PNG/JPG/BMP), которое будет добавлено как фоновый водяной знак на каждой странице DOCX/PDF |
+| `--watermark-opacity 0-100` | Непрозрачность водяного знака: 0 = невидимый, 100 = сплошной (по умолчанию: 35). Работает в MS Word; **LibreOffice при экспорте в PDF её игнорирует** |
+| `--watermark-width INCHES` | Ширина водяного знака в дюймах (по умолчанию: 5.5). Высота масштабируется автоматически |
 
 > Если ни один из флагов `--json` / `--docx` / `--pdf` не указан — по умолчанию создаётся Word-документ.
 
@@ -78,6 +81,13 @@ python vuln_report.py -i report.xml --json --docx --pdf
 
 # JSON без сортировки по CVSS
 python vuln_report.py -i /home/administrator/repXML/ --json --no-sort
+
+# С водяным знаком (логотип организации на каждой странице)
+python vuln_report.py -i /home/administrator/repXML/ --pdf --watermark /path/to/logo.png
+
+# Водяной знак с пользовательской шириной и непрозрачностью
+python vuln_report.py -i /home/administrator/repXML/ --docx \
+    --watermark logo.png --watermark-width 6 --watermark-opacity 20
 ```
 
 ---
@@ -113,7 +123,6 @@ python vuln_report.py -i /home/administrator/repXML/ --json --no-sort
   ]
 }
 ```
-
 ### DOCX / PDF (`--docx`, `--pdf`)
 
 Документ содержит:
