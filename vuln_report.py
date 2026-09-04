@@ -1,52 +1,18 @@
 #!/usr/bin/env python3
 """
-vuln_report.py
+vuln_report.py — OpenVAS Report Analyzer v1.0
 
-Объединенный инструмент: обрабатывает XML-отчеты Greenbone OpenVAS,
-группирует уязвимости по OID и выдает результат в любом сочетании
-форматов: JSON (структурированные данные), DOCX (человекочитаемый
-Word-документ) и PDF (через LibreOffice).
+Обрабатывает XML-отчёты Greenbone OpenVAS, группирует уязвимости по OID
+и экспортирует результат в JSONQ, DOCX и/или PDF.
 
-Использование:
-    # Только Word-документ (формат по умолчанию, если ничего не указано)
-    python vuln_report.py -i /path/to/reports/
+  python vuln_report.py -i /path/to/reports/ --pdf
+  python vuln_report.py -i report.xml --json --docx --pdf
+  python vuln_report.py -i /path/to/reports/ --pdf --watermark logo.png
 
-    # Word + PDF
-    python vuln_report.py -i /path/to/reports/ --docx --pdf
+Коды возврата: 0 — OK, 1 — ошибка, 2 — неверные аргументы, 130 — Ctrl+C.
 
-    # Все три формата сразу
-    python vuln_report.py -i /path/to/reports/ --json --docx --pdf
-
-    # Только PDF (промежуточный .docx создается и удаляется автоматически)
-    python vuln_report.py -i /path/to/reports/ --pdf
-
-    # Рекурсивный обход каталога и отсев информационных записей
-    python vuln_report.py -i /path/to/reports/ -r --min-cvss 4.0 --docx
-
-    # Свое базовое имя выходных файлов (без расширения)
-    python vuln_report.py -i report.xml -o audit_2026_06 --docx --pdf
-
-    # С водяным знаком (логотип организации на каждой странице)
-    python vuln_report.py -i /path/to/reports/ --pdf --watermark /path/to/logo.png
-
-    # Водяной знак с пользовательской шириной и непрозрачностью
-    python vuln_report.py -i /path/to/reports/ --docx \\
-        --watermark logo.png --watermark-width 6 --watermark-opacity 20
-
-Коды возврата:
-    0 — все запрошенные форматы успешно сохранены
-    1 — нечего обрабатывать либо часть форматов не создана
-    2 — некорректные аргументы командной строки
-    130 — прервано пользователем (Ctrl+C)
-
-Зависимости:
-    pip install python-docx
-    pip install defusedxml   # опционально: защита от XML-бомб, используется если есть
-    (для --pdf необходим установленный LibreOffice: soffice в PATH)
-    Примечание: непрозрачность водяного знака (--watermark-opacity) работает
-    корректно в Microsoft Word; LibreOffice при экспорте в PDF её игнорирует.
+Зависимости: python-docx, lxml; LibreOffice для --pdf.
 """
-
 import argparse
 import gzip
 import ipaddress
@@ -78,15 +44,11 @@ except ImportError:  # pragma: no cover - зависит от окружения
     HAVE_DEFUSEDXML = False
 
 
-# ============================================================================
-# Общие константы
-
-# XML-пространства имён, используемые в водяном знаке
+# XML-пространства имён (водяной знак)
 _WP  = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'
 _A   = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 _PIC = 'http://schemas.openxmlformats.org/drawingml/2006/picture'
 _W   = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-# ============================================================================
 
 THREAT_ORDER = ["Critical", "High", "Medium", "Low", "Log", "None"]
 
@@ -150,6 +112,25 @@ def warn(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
+
+
+def print_banner():
+    """Выводит приветственный баннер в терминал."""
+    c  = "\033[96m\033[1m"   # cyan + bold
+    r  = "\033[0m"            # reset
+    # Если вывод не в терминал — без цвета
+    if not sys.stdout.isatty():
+        c = r = ""
+    lines = [
+        "╔══════════════════════════════════════════════════════════════════╗",
+        "║       🛡  OpenVAS Report Analyzer v1.0  🛡                       ║",
+        "║          github: ilyabem/vuln_report_OPENVAS                     ║",
+        "╚══════════════════════════════════════════════════════════════════╝",
+    ]
+    for line in lines:
+        print(f"{c}{line}{r}", flush=True)
+    print()
+
 def normalize_threat(value):
     """Приводит уровень угрозы к одному из ключей THREAT_ORDER."""
     if not value:
@@ -172,9 +153,7 @@ def clean_text(value):
     return text.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-# ============================================================================
-# Часть 1: парсинг XML-отчетов OpenVAS и группировка по OID
-# ============================================================================
+# --- Парсинг XML ---
 
 def _is_xml_name(fname):
     return fname.lower().endswith(XML_SUFFIXES)
@@ -529,9 +508,7 @@ def parse_xml_to_data(input_path, sort_desc=True, recursive=False, min_cvss=None
     return data
 
 
-# ============================================================================
-# Часть 2: генерация Word-документа (.docx) из данных
-# ============================================================================
+# --- Генерация DOCX ---
 
 def shade_cell(cell, hex_color):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -950,9 +927,7 @@ def build_document(data, watermark_path=None, watermark_opacity=35,
     return doc
 
 
-# ============================================================================
-# Часть 3: конвертация DOCX -> PDF через LibreOffice
-# ============================================================================
+# --- Конвертация в PDF ---
 
 def convert_to_pdf(docx_path):
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
@@ -998,9 +973,6 @@ def convert_to_pdf(docx_path):
     return pdf_path
 
 
-# ============================================================================
-# main
-# ============================================================================
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(
@@ -1187,6 +1159,8 @@ def run(args):
 
 
 def main():
+    if "-q" not in sys.argv and "--quiet" not in sys.argv:
+        print_banner()
     parser = build_arg_parser()
     args = parser.parse_args()
     validate_args(parser, args)
