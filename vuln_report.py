@@ -3,7 +3,7 @@
 vuln_report.py — OpenVAS Report Analyzer v1.0
 
 Обрабатывает XML-отчёты Greenbone OpenVAS, группирует уязвимости по OID
-и экспортирует результат в JSONQ, DOCX и/или PDF.
+и экспортирует результат в JSON, DOCX и/или PDF.
 
   python vuln_report.py -i /path/to/reports/ --pdf
   python vuln_report.py -i report.xml --json --docx --pdf
@@ -123,7 +123,7 @@ def print_banner():
         c = r = ""
     lines = [
         "╔══════════════════════════════════════════════════════════════════╗",
-        "║       🛡  OpenVAS Report Analyzer v1.0  🛡                        ║",
+        "║       🛡  OpenVAS Report Analyzer v1.0  🛡                       ║",
         "║          github: ilyabem/vuln_report_OPENVAS                     ║",
         "╚══════════════════════════════════════════════════════════════════╝",
     ]
@@ -226,6 +226,21 @@ def _to_float(value):
         return None
 
 
+def parse_nvt_tags(nvt_el):
+    """Парсит <nvt><tags> в словарь key=value (разделитель |)."""
+    if nvt_el is None:
+        return {}
+    tags_el = nvt_el.find("tags")
+    if tags_el is None or not tags_el.text:
+        return {}
+    result = {}
+    for part in tags_el.text.split("|"):
+        key, sep, value = part.partition("=")
+        if sep:
+            result[key.strip()] = clean_text(value)
+    return result
+
+
 def extract_solution(nvt_el, result_el):
     """Решение может быть в <nvt><solution> или в <solution> на уровне result."""
     sol_el = None
@@ -286,6 +301,9 @@ def parse_result(result_el):
     threat = text_or_none(result_el.find("threat"))
     threat = normalize_threat(threat) if threat else severity_to_threat(cvss_score)
 
+    nvt_tags = parse_nvt_tags(nvt_el)
+    impact = clean_text(nvt_tags.get("impact", "")) or None
+
     ip, hostname = extract_host(result_el)
     port = text_or_none(result_el.find("port"))
 
@@ -293,6 +311,7 @@ def parse_result(result_el):
         "oid": oid,
         "name": name,
         "description": description,
+        "impact": impact,
         "solution": solution,
         "cvss_score": cvss_score,
         "threat_level": threat,
@@ -313,6 +332,7 @@ def merge_result(grouped, parsed, stats):
             "oid": oid,
             "name": parsed["name"],
             "description": parsed["description"] or "",
+            "impact": parsed["impact"] or "",
             "solution": parsed["solution"] or "",
             "cvss_score": parsed["cvss_score"],
             "threat_level": parsed["threat_level"],
@@ -329,6 +349,8 @@ def merge_result(grouped, parsed, stats):
             entry["threat_level"] = parsed["threat_level"]
         if not entry["description"] and parsed["description"]:
             entry["description"] = parsed["description"]
+        if not entry["impact"] and parsed["impact"]:
+            entry["impact"] = parsed["impact"]
         if not entry["solution"] and parsed["solution"]:
             entry["solution"] = parsed["solution"]
 
@@ -438,6 +460,7 @@ def build_grouped_data(grouped, stats, source_files, sort_desc=True, min_cvss=No
                 "oid": entry["oid"],
                 "name": entry["name"],
                 "description": entry["description"],
+                "impact": entry["impact"],
                 "solution": entry["solution"],
                 "cvss_score": entry["cvss_score"],
                 "threat_level": entry["threat_level"],
@@ -667,6 +690,77 @@ def add_title_page(doc, meta):
     add_horizontal_rule(sep)
 
 
+
+
+def build_host_list(vulnerabilities):
+    """Уникальные хосты с количеством затронутых уязвимостей."""
+    hosts = {}
+    for vuln in vulnerabilities:
+        for asset in vuln.get("affected_assets", []):
+            ip = asset.get("ip")
+            if not ip:
+                continue
+            if ip not in hosts:
+                hosts[ip] = {"hostname": asset.get("hostname"), "count": 0}
+            else:
+                if not hosts[ip]["hostname"] and asset.get("hostname"):
+                    hosts[ip]["hostname"] = asset.get("hostname")
+            hosts[ip]["count"] += 1
+
+    host_list = [
+        {"ip": ip, "hostname": info["hostname"], "vuln_count": info["count"]}
+        for ip, info in hosts.items()
+    ]
+    host_list.sort(key=lambda h: (-h["vuln_count"], _ip_sort_key(h["ip"])))
+    return host_list
+
+
+def add_host_list_section(doc, vulnerabilities):
+    """Раздел «Общий перечень хостов» со строкой «Итого» внизу таблицы."""
+    hosts = build_host_list(vulnerabilities)
+    total = len(hosts)
+
+    doc.add_heading("Общий перечень хостов", level=1)
+
+    if not hosts:
+        doc.add_paragraph("Хосты не обнаружены.")
+        doc.add_paragraph()
+        return
+
+    col_w = [1.7, 2.7, 2.5]
+    table = doc.add_table(rows=1, cols=3)
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    set_column_widths(table, col_w)
+
+    hdr = table.rows[0].cells
+    for i, label in enumerate(["IP-адрес", "Имя хоста", "Уязвимостей"]):
+        set_cell_text(hdr[i], label, bold=True, color="FFFFFF", size=9,
+                      align=WD_ALIGN_PARAGRAPH.CENTER)
+        shade_cell(hdr[i], "2E4057")
+        set_cell_borders(hdr[i])
+    repeat_table_header(table.rows[0])
+
+    for host in hosts:
+        row = table.add_row().cells
+        set_cell_text(row[0], host["ip"] or "-", size=9)
+        set_cell_text(row[1], host["hostname"] or "-", size=9)
+        set_cell_text(row[2], str(host["vuln_count"]), size=9,
+                      bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        for cell in row:
+            set_cell_borders(cell)
+
+    total_row = table.add_row().cells
+    set_cell_text(total_row[0], "Итого:", bold=True, size=9)
+    set_cell_text(total_row[1], "", size=9)
+    set_cell_text(total_row[2], str(total), bold=True, size=9,
+                  align=WD_ALIGN_PARAGRAPH.CENTER)
+    for cell in total_row:
+        shade_cell(cell, "E8EDF2")
+        set_cell_borders(cell, color="AAAAAA")
+
+    set_column_widths(table, col_w)
+    doc.add_paragraph()
+
 def add_summary_table(doc, vulnerabilities):
     counts = {key: 0 for key in THREAT_ORDER}
     for v in vulnerabilities:
@@ -736,11 +830,12 @@ def add_vulnerability_section(doc, vuln, index, total):
     doc.add_paragraph()
 
     add_multiline(doc, "Описание: ", vuln.get("description"))
-    add_multiline(doc, "Решение: ", vuln.get("solution"))
+    add_multiline(doc, "Влияние: ",  vuln.get("impact"))
+    add_multiline(doc, "Решение: ",  vuln.get("solution"))
 
     assets = vuln.get("affected_assets", [])
     if assets:
-        doc.add_paragraph().add_run(f"Затронутые хосты ({len(assets)}):").bold = True
+        doc.add_paragraph().add_run("Затронутые хосты:").bold = True
 
         table = doc.add_table(rows=1, cols=3)
         table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -899,6 +994,7 @@ def build_document(data, watermark_path=None, watermark_opacity=35,
 
     add_title_page(doc, meta)
     add_summary_table(doc, vulnerabilities)
+    add_host_list_section(doc, vulnerabilities)
 
     doc.add_heading("Подробное описание уязвимостей", level=1)
 
