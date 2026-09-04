@@ -1,4 +1,4 @@
-Инструмент для обработки XML-отчётов сканера уязвимостей **Greenbone OpenVAS**.  
+# Инструмент для обработки XML-отчётов сканера уязвимостей **Greenbone OpenVAS**.  
 Группирует уязвимости по уникальному идентификатору (OID), объединяет хосты,
 на которых они обнаружены, и генерирует отчёт в одном или нескольких форматах.
 
@@ -34,12 +34,8 @@
 ```bash
 # Рекомендуется использовать виртуальное окружение
 python3 -m venv venv
-source venv/bin/activate          # Linux / macOS
-# venv\Scripts\activate           # Windows
-
+source venv/bin/activate      
 pip install python-docx lxml
-
-# LibreOffice (только если нужен PDF, Linux):
 sudo apt install libreoffice
 ```
 
@@ -127,8 +123,8 @@ python vuln_report.py -i report.xml --docx -q
       "threat_level": "High",
       "affected_assets": [
         {
-          "ip": "172.22.6.5",
-          "hostname": "vfs2.nlb.by",
+          "ip": "192.168.1.5",
+          "hostname": "v2.b.b",
           "ports": ["443/tcp"]
         }
       ]
