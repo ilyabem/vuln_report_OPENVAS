@@ -123,7 +123,7 @@ def print_banner():
         c = r = ""
     lines = [
         "╔══════════════════════════════════════════════════════════════════╗",
-        "║       🛡  OpenVAS Report Analyzer v1.0  🛡                       ║",
+        "║       🛡  OpenVAS Report Analyzer v1.0  🛡                        ║",
         "║          github: ilyabem/vuln_report_OPENVAS                     ║",
         "╚══════════════════════════════════════════════════════════════════╝",
     ]
